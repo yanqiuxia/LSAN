@@ -58,30 +58,30 @@ class StructuredSelfAttention(BasicModule):
         hidden_state = self.init_hidden()
         outputs, hidden_state = self.lstm(embeddings, hidden_state)
         #step2 get self-attention
-        selfatt = torch.tanh(self.linear_first(outputs))
-        selfatt = self.linear_second(selfatt)
-        selfatt = F.softmax(selfatt, dim=1)
-        selfatt= selfatt.transpose(1, 2)
-        self_att = torch.bmm(selfatt, outputs)   
+        selfatt = torch.tanh(self.linear_first(outputs))#[b,s,d_a]
+        selfatt = self.linear_second(selfatt)#[b,s,c]
+        selfatt = F.softmax(selfatt, dim=1)#[b,s,c]
+        selfatt= selfatt.transpose(1, 2)#[b,c,s]
+        self_att = torch.bmm(selfatt, outputs)#[b,c,2e]
         #step3 get label-attention
-        h1 = outputs[:, :, :self.lstm_hid_dim]
+        h1 = outputs[:, :, :self.lstm_hid_dim] #[b,s,e]
         h2 = outputs[:, :,self.lstm_hid_dim:]
         
         label = self.label_embed.weight.data
-        m1 = torch.bmm(label.expand(self.batch_size, self.n_classes, self.lstm_hid_dim), h1.transpose(1, 2))
-        m2 = torch.bmm(label.expand(self.batch_size, self.n_classes, self.lstm_hid_dim), h2.transpose(1, 2))
-        label_att= torch.cat((torch.bmm(m1,h1),torch.bmm(m2,h2)),2)
+        m1 = torch.bmm(label.expand(self.batch_size, self.n_classes, self.lstm_hid_dim), h1.transpose(1, 2))#[b,c,s]
+        m2 = torch.bmm(label.expand(self.batch_size, self.n_classes, self.lstm_hid_dim), h2.transpose(1, 2))#[b,c,s]
+        label_att= torch.cat((torch.bmm(m1,h1),torch.bmm(m2,h2)),2)#[b,c,2e]
         # label_att = F.normalize(label_att, p=2, dim=-1)
         # self_att = F.normalize(self_att, p=2, dim=-1) #all can
-        weight1=torch.sigmoid(self.weight1(label_att))
-        weight2 = torch.sigmoid(self.weight2(self_att ))
+        weight1=torch.sigmoid(self.weight1(label_att))#[b,c]
+        weight2 = torch.sigmoid(self.weight2(self_att ))#[b,c]
         weight1 = weight1/(weight1+weight2)
         weight2= 1-weight1
 
-        doc = weight1*label_att+weight2*self_att
+        doc = weight1*label_att+weight2*self_att #[b,c,2e]
         # there two method, for simple, just add
         # also can use linear to do it
-        avg_sentence_embeddings = torch.sum(doc, 1)/self.n_classes
+        avg_sentence_embeddings = torch.sum(doc, 1)/self.n_classes#[b,2e]
 
-        pred = torch.sigmoid(self.output_layer(avg_sentence_embeddings))
+        pred = torch.sigmoid(self.output_layer(avg_sentence_embeddings))#[b,c]
         return pred
