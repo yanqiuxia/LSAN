@@ -24,7 +24,7 @@ class StructuredSelfAttention(BasicModule):
         self.n_classes = n_classes
         self.embeddings = self._load_embeddings(embeddings)
         self.label_embed = self.load_labelembedd(label_embed)
-        self.lstm = torch.nn.LSTM(300, hidden_size=lstm_hid_dim, num_layers=1,
+        self.lstm = torch.nn.LSTM(200, hidden_size=lstm_hid_dim, num_layers=1,
                             batch_first=True, bidirectional=True)
         self.linear_first = torch.nn.Linear(lstm_hid_dim * 2, d_a)
         self.linear_second = torch.nn.Linear(d_a, n_classes)
@@ -84,4 +84,5 @@ class StructuredSelfAttention(BasicModule):
         avg_sentence_embeddings = torch.sum(doc, 1)/self.n_classes#[b,2e]
 
         pred = torch.sigmoid(self.output_layer(avg_sentence_embeddings))#[b,c]
-        return pred
+        pred_ids = torch.where(pred > 0.5, torch.ones_like(pred), torch.zeros_like(pred)).int()  # (N,C)
+        return pred,pred_ids

@@ -1,8 +1,12 @@
 import numpy as np
 from tqdm import tqdm
-def train(attention_model,train_loader,test_loader,criterion,opt,epochs = 5,GPU=True):
+import torch
+from analysis import calc_mul_f1
+def train(attention_model,train_loader,test_loader,criterion,opt,epochs = 5,GPU=True,id2label=None):
     if GPU:
         attention_model.cuda()
+
+    best_f1 = 0.0
     for i in range(epochs):
         print("Running EPOCH",i+1)
         train_loss = []
@@ -11,7 +15,7 @@ def train(attention_model,train_loader,test_loader,criterion,opt,epochs = 5,GPU=
         for batch_idx, train in enumerate(tqdm(train_loader)):
             opt.zero_grad()
             x, y = train[0].cuda(), train[1].cuda()
-            y_pred= attention_model(x)
+            y_pred,_= attention_model(x)
             loss = criterion(y_pred, y.float())/train_loader.batch_size
             loss.backward()
             opt.step()
@@ -31,12 +35,17 @@ def train(attention_model,train_loader,test_loader,criterion,opt,epochs = 5,GPU=
         test_acc_k = []
         test_loss = []
         test_ndcg_k = []
+        y_preds = []
+        y_trues = []
         for batch_idx, test in enumerate(tqdm(test_loader)):
             x, y = test[0].cuda(), test[1].cuda()
-            val_y= attention_model(x)
+            val_y, pred_id= attention_model(x)
             loss = criterion(val_y, y.float()) /train_loader.batch_size
             labels_cpu = y.data.cpu().float()
-            pred_cpu = val_y.data.cpu()
+            pred_cpu = pred_id.data.cpu()
+            y_preds.extend(pred_cpu.numpy().tolist())
+            y_trues.extend(labels_cpu.numpy().tolist())
+
             prec = precision_k(labels_cpu.numpy(), pred_cpu.numpy(), 5)
             test_acc_k.append(prec)
 
@@ -50,6 +59,18 @@ def train(attention_model,train_loader,test_loader,criterion,opt,epochs = 5,GPU=
         print("precision@1 : %.4f , precision@3 : %.4f , precision@5 : %.4f " % (
         test_prec[0], test_prec[2], test_prec[4]))
         print("ndcg@1 : %.4f , ndcg@3 : %.4f , ndcg@5 : %.4f " % (test_ndcg[0], test_ndcg[2], test_ndcg[4]))
+
+        f1_micro, f1_macro, avg_f1, classify_report = calc_mul_f1(y_trues,
+                                                                  y_preds,
+                                                                  id2label,
+                                                                  calc_report=False)
+        print(
+            f'epoch {i} -- avg_f1:{avg_f1: .4f},   f1_micro:{f1_micro:.4f},   f1_macro:{f1_macro:.4f} ')
+        if avg_f1>best_f1:
+            save_path = './checkpoint/model.pth'
+            torch.save(attention_model.state_dict(), save_path)
+            print('model save path%s'%save_path)
+            best_f1 = avg_f1
 
 
 def precision_k(true_mat, score_mat, k):
